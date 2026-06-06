@@ -1,0 +1,22 @@
+# Huckleberry baby sleep service — install to /etc/systemd/system/
+# See deploy/README.md for full setup. Mirrors the belgrade-webhook pattern:
+# unprivileged user, /etc/<name>.env secrets, Restart=always.
+[Unit]
+Description=Huckleberry baby sleep API (baby-svc)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=babysvc
+Group=babysvc
+WorkingDirectory=/home/babysvc/huckleberry_companion/python_service
+EnvironmentFile=/etc/baby-svc.env
+ExecStart=/home/babysvc/huckleberry_companion/python_service/.venv/bin/uvicorn main:app \
+  --host 0.0.0.0 --port 8001 --workers 1 --limit-max-requests 1000 \
+  --ssl-keyfile /home/babysvc/certs/baby-svc.key \
+  --ssl-certfile /home/babysvc/certs/baby-svc.crt
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

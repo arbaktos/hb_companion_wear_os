@@ -1,0 +1,246 @@
+/* ============================================================
+   Huckleberry companion — Pixel Watch 3
+   THREE BOLD CONCEPTS: Orbital · Night Horizon · Squish
+   ============================================================ */
+:root { --screen: 456px; --bezel: 26px; }
+* { box-sizing: border-box; }
+
+/* ---------- Device (Pixel Watch 3 pebble) ---------- */
+.device {
+  position: relative;
+  width: calc(var(--screen) + var(--bezel) * 2);
+  height: calc(var(--screen) + var(--bezel) * 2);
+  border-radius: 50%;
+  background: radial-gradient(120% 120% at 30% 22%, #2b2b30 0%, #161619 38%, #08080a 100%);
+  box-shadow:
+    inset 0 2px 3px rgba(255,255,255,.18), inset 0 -10px 26px rgba(0,0,0,.7),
+    0 30px 60px -18px rgba(0,0,0,.65), 0 8px 18px rgba(0,0,0,.45);
+  display: grid; place-items: center;
+}
+.device::after {
+  content: ""; position: absolute; inset: 6px; border-radius: 50%;
+  background: conic-gradient(from 210deg, rgba(255,255,255,.10), rgba(255,255,255,0) 25%,
+    rgba(255,255,255,.06) 52%, rgba(255,255,255,0) 78%, rgba(255,255,255,.12));
+  -webkit-mask: radial-gradient(circle, transparent 0 96%, #000 97%);
+          mask: radial-gradient(circle, transparent 0 96%, #000 97%);
+  pointer-events: none;
+}
+.crown, .sidebtn {
+  position: absolute; right: -3px; border-radius: 6px 3px 3px 6px;
+  background: linear-gradient(180deg, #4a4a50, #1c1c20);
+  box-shadow: inset 0 1px 1px rgba(255,255,255,.3), -2px 0 4px rgba(0,0,0,.5);
+}
+.crown  { top: 44%; width: 16px; height: 58px; }
+.sidebtn{ top: 33%; width: 11px; height: 30px; right: -1px; opacity: .9; }
+
+/* ---------- Screen base ---------- */
+.screen {
+  position: relative; width: var(--screen); height: var(--screen);
+  border-radius: 50%; overflow: hidden;
+  background: radial-gradient(120% 130% at 50% 8%, var(--bg-top, #2a2356), var(--bg-bot, #0b0a24));
+  color: var(--text, #f4f1ff);
+  font-family: "Nunito", ui-rounded, system-ui, sans-serif;
+  isolation: isolate; transition: filter .5s ease, background .9s ease;
+}
+.screen[data-state="paused"] { filter: brightness(.74) saturate(.82); }
+.glass { position: absolute; inset: 0; z-index: 9; pointer-events: none; border-radius: 50%;
+  background: radial-gradient(80% 55% at 32% 14%, rgba(255,255,255,.10), rgba(255,255,255,0) 60%); }
+.vignette { position: absolute; inset: 0; z-index: 8; pointer-events: none; border-radius: 50%;
+  box-shadow: inset 0 0 70px 10px rgba(0,0,0,.5); }
+
+/* ---------- shared stars ---------- */
+.star { position: absolute; border-radius: 50%; background: var(--star, #fff);
+  box-shadow: 0 0 6px 1px rgba(255,255,255,.45);
+  animation: twinkle var(--tw,3s) ease-in-out infinite; animation-delay: var(--dly,0s); }
+@keyframes twinkle { 0%,100% { opacity:.22; transform: scale(.7);} 50% { opacity:1; transform: scale(1.15);} }
+.screen[data-state="paused"] .star { animation-play-state: paused; }
+
+/* ---------- shared content helpers ---------- */
+.label { font-size: 22px; font-weight: 800; letter-spacing: .22em; text-transform: uppercase; color: var(--muted,#b3acd6); }
+.label.pulse { animation: labelPulse 1.6s ease-in-out infinite; color: var(--acc); }
+@keyframes labelPulse { 0%,100%{opacity:.45;} 50%{opacity:1;} }
+.clock { font-size: 76px; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums;
+  letter-spacing: -.02em; color: var(--text); text-shadow: 0 2px 18px rgba(0,0,0,.4); }
+.clock.dim { color: var(--muted); }
+.big-hm { font-size: 44px; font-weight: 800; white-space: nowrap; }
+
+/* ---------- shared buttons ---------- */
+.pill {
+  display: inline-flex; align-items: center; justify-content: center; gap: 11px;
+  height: 70px; min-width: 150px; padding: 0 28px; border: 0; border-radius: 38px;
+  font-family: inherit; font-size: 26px; font-weight: 800; cursor: pointer; color: var(--on-acc,#1a1340);
+  background: linear-gradient(180deg, var(--acc) 0%, var(--acc2, var(--acc)) 100%);
+  box-shadow: inset 0 2px 3px rgba(255,255,255,.45), inset 0 -6px 12px rgba(0,0,0,.16),
+    0 12px 24px -8px var(--acc-shadow, rgba(0,0,0,.4));
+  position: relative; overflow: hidden;
+  transition: transform .16s cubic-bezier(.2,.9,.3,1.4);
+}
+.pill svg { width: 28px; height: 28px; }
+.pill:active { transform: scale(.93); }
+.ghost {
+  display: inline-flex; align-items: center; justify-content: center; gap: 9px;
+  height: 60px; min-width: 120px; padding: 0 22px; border-radius: 32px;
+  font-family: inherit; font-size: 22px; font-weight: 800; cursor: pointer; color: var(--muted);
+  background: rgba(255,255,255,.07); border: 1.5px solid rgba(255,255,255,.16);
+  position: relative; overflow: hidden;
+  transition: transform .16s cubic-bezier(.2,.9,.3,1.4), background .2s;
+}
+.ghost svg { width: 21px; height: 21px; }
+.ghost:active { transform: scale(.93); background: rgba(255,255,255,.13); }
+
+/* ---------- tap FX ---------- */
+.fx-bounce { animation: fxBounce .5s cubic-bezier(.2,.9,.3,1.5); }
+@keyframes fxBounce { 0%{transform:scale(.86);} 45%{transform:scale(1.07);} 70%{transform:scale(.97);} 100%{transform:scale(1);} }
+.fx-squish { animation: fxSquish .55s cubic-bezier(.3,.9,.3,1.4); }
+@keyframes fxSquish {
+  0%{transform:scale(1,1);} 25%{transform:scale(1.18,.78);} 50%{transform:scale(.86,1.16);}
+  72%{transform:scale(1.06,.95);} 100%{transform:scale(1,1);} }
+.fx-ripple { position:absolute; border-radius:50%; pointer-events:none;
+  background: radial-gradient(circle, rgba(255,255,255,.6), transparent 70%);
+  transform: translate(-50%,-50%) scale(0); animation: fxRipple .6s ease-out forwards; }
+@keyframes fxRipple { to { transform: translate(-50%,-50%) scale(9); opacity:0; } }
+
+/* enter pop */
+.view { position:absolute; inset:0; z-index:5; display:flex; flex-direction:column;
+  align-items:center; justify-content:center; text-align:center; padding:0 60px; }
+.view.enter { animation: popIn .42s cubic-bezier(.2,.9,.3,1.3); }
+@keyframes popIn { 0%{transform:translateY(12px) scale(.95);} 100%{transform:translateY(0) scale(1);} }
+
+/* ============================================================
+   CONCEPT 1 — ORBITAL  (rim comet + ticks, number-forward, arc buttons)
+   ============================================================ */
+.c-orbital {
+  --bg-top:#241c52; --bg-bot:#0a0920; --text:#eef1ff; --muted:#9fadd8; --star:#cfe0ff;
+  --acc:#8fb2ff; --acc2:#6f8dff; --on-acc:#0e1538; --acc-shadow:rgba(111,141,255,.5); --comet:#79ecff;
+}
+.orb-ticks { position:absolute; inset:8px; border-radius:50%; z-index:1;
+  background: repeating-conic-gradient(from 0deg, rgba(255,255,255,.42) 0 0.9deg, transparent 0.9deg 30deg);
+  -webkit-mask: radial-gradient(circle, transparent 0 91%, #000 92% 97%, transparent 98%);
+          mask: radial-gradient(circle, transparent 0 91%, #000 92% 97%, transparent 98%);
+  opacity:.5; }
+.orb-track { position:absolute; inset:12px; border-radius:50%; z-index:1;
+  border: 8px solid rgba(255,255,255,.07); }
+.orb-spin { position:absolute; inset:0; z-index:2; transform-origin:50% 50%; }
+.c-orbital[data-state="sleeping"] .orb-spin { animation: spin 7s linear infinite; }
+.c-orbital[data-state="paused"]   .orb-spin { animation: spin 7s linear infinite; animation-play-state: paused; }
+.orb-tail { position:absolute; inset:12px; border-radius:50%; opacity:0;
+  background: conic-gradient(from 8deg, transparent 0 62%, var(--comet) 96%, transparent 100%);
+  -webkit-mask: radial-gradient(circle, transparent 0 89%, #000 90% 96%, transparent 97%);
+          mask: radial-gradient(circle, transparent 0 89%, #000 90% 96%, transparent 97%); }
+.c-orbital[data-state="sleeping"] .orb-tail,
+.c-orbital[data-state="paused"]   .orb-tail { opacity:.9; }
+.orb-comet { position:absolute; left:50%; top:13px; width:18px; height:18px; margin-left:-9px;
+  border-radius:50%; background:var(--comet); box-shadow:0 0 16px 5px var(--comet), 0 0 5px 1px #fff; opacity:0; }
+.c-orbital[data-state="sleeping"] .orb-comet,
+.c-orbital[data-state="paused"]   .orb-comet { opacity:1; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.orb-center { position:absolute; inset:0; z-index:5; display:flex; flex-direction:column;
+  align-items:center; justify-content:center; gap:6px; }
+.orb-center .label { margin-bottom:2px; }
+.orb-actions { position:absolute; left:0; right:0; bottom:62px; z-index:6;
+  display:flex; gap:12px; justify-content:center; }
+.orb-actions .pill { height:64px; font-size:24px; min-width:130px; }
+.orb-actions .ghost { height:64px; }
+
+/* ============================================================
+   CONCEPT 2 — NIGHT HORIZON  (sky scene that changes by state)
+   ============================================================ */
+.c-horizon { --text:#fff7f0; --muted:#e6d6e4; --star:#fff; --acc:#ffce95; --acc2:#ff9b73;
+  --on-acc:#3a1d12; --acc-shadow:rgba(255,140,95,.5); }
+.c-horizon[data-state="awake"]    { background: linear-gradient(180deg,#241d4f 0%,#4a2f63 46%,#9c5560 74%,#e0935a 100%); }
+.c-horizon[data-state="sleeping"] { background: linear-gradient(180deg,#080a26 0%,#161540 52%,#241a47 100%); }
+.c-horizon[data-state="paused"]   { background: linear-gradient(180deg,#0a0a22 0%,#181638 52%,#221a40 100%); }
+
+.celes { position:absolute; left:50%; width:96px; height:96px; margin-left:-48px; border-radius:50%;
+  z-index:1; transition: top 1.2s cubic-bezier(.4,0,.2,1), background .9s, box-shadow .9s; }
+.c-horizon[data-state="awake"] .celes { top:60%;
+  background: radial-gradient(circle at 38% 35%, #ffe9b0, #ffb04a 60%, #ff8a3c);
+  box-shadow: 0 0 60px 22px rgba(255,160,70,.5); }
+.c-horizon[data-state="sleeping"] .celes,
+.c-horizon[data-state="paused"] .celes { top:8%; width:84px; height:84px; margin-left:-42px;
+  background: radial-gradient(circle at 36% 32%, #ffffff, #d8d2ff 62%, #a9a2e0);
+  box-shadow: 0 0 46px 14px rgba(200,196,255,.4); }
+.c-horizon[data-state="paused"] .celes { filter: saturate(.7); }
+
+/* drifting cloud */
+.cloud { position:absolute; top:30%; left:-40%; width:160px; height:54px; z-index:2;
+  background: radial-gradient(closest-side at 30% 60%, rgba(255,255,255,.16), transparent),
+              radial-gradient(closest-side at 60% 50%, rgba(255,255,255,.18), transparent),
+              radial-gradient(closest-side at 80% 65%, rgba(255,255,255,.13), transparent);
+  filter: blur(3px); animation: drift 26s linear infinite; opacity:.0; }
+.c-horizon[data-state="awake"] .cloud { opacity:.8; }
+@keyframes drift { from{ transform: translateX(0);} to{ transform: translateX(600px);} }
+
+/* shooting star at night */
+.shoot { position:absolute; top:24%; left:64%; width:90px; height:2px; z-index:2;
+  background: linear-gradient(90deg, transparent, #fff); border-radius:2px; opacity:0;
+  transform: rotate(28deg); }
+.c-horizon[data-state="sleeping"] .shoot { animation: shoot 6.5s ease-in infinite; }
+@keyframes shoot { 0%,72%{opacity:0; transform: translate(40px,-30px) rotate(28deg) scaleX(.2);}
+  80%{opacity:1;} 92%{opacity:0; transform: translate(-110px,60px) rotate(28deg) scaleX(1);} 100%{opacity:0;} }
+
+/* horizon hills */
+.hills { position:absolute; left:0; right:0; bottom:0; height:42%; z-index:3; }
+.hills::before, .hills::after { content:""; position:absolute; bottom:-40%; border-radius:50%; }
+.hills::before { left:-12%; width:80%; height:120%; background:#120e2e; }
+.hills::after  { right:-14%; width:78%; height:108%; background:#0c0a24; }
+.c-horizon[data-state="awake"] .hills::before { background:#3a2440; }
+.c-horizon[data-state="awake"] .hills::after  { background:#2a1a36; }
+
+.horz-top { position:absolute; left:0; right:0; top:78px; z-index:6; text-align:center;
+  display:flex; flex-direction:column; align-items:center; gap:4px;
+  text-shadow: 0 2px 14px rgba(0,0,0,.5); }
+.c-horizon[data-state="sleeping"] .horz-top,
+.c-horizon[data-state="paused"] .horz-top { top:176px; }
+.horz-top .clock { font-size:64px; }
+.horz-top .big-hm { font-size:42px; }
+.horz-actions { position:absolute; left:0; right:0; bottom:50px; z-index:7;
+  display:flex; gap:11px; justify-content:center; }
+.horz-actions .pill { height:64px; font-size:24px; }
+.horz-actions .ghost { height:64px; }
+
+/* ============================================================
+   CONCEPT 3 — SQUISH  (gooey morphing blob = the button, liquid fill)
+   ============================================================ */
+.c-squish { --bg-top:#2a1448; --bg-bot:#120726; --text:#ffffff; --muted:#d3b6e6; --star:#e9d6ff;
+  --acc:#ffd27a; --acc2:#ff9ec4; --on-acc:#3a1840; --acc-shadow:rgba(255,150,200,.45);
+  --blob1:#c77dff; --blob2:#7b3ff2; --liquid:rgba(255,255,255,.20); }
+.sq-wrap { position:absolute; inset:0; z-index:5; display:flex; flex-direction:column;
+  align-items:center; justify-content:center; gap:22px; padding:0 46px; }
+.sq-label { font-size:20px; }
+.sq-blob {
+  position:relative; width:198px; height:198px; border:0; cursor:pointer; padding:0; flex:0 0 auto;
+  background: radial-gradient(120% 120% at 32% 26%, var(--blob1) 0%, var(--blob2) 78%);
+  border-radius: 46% 54% 52% 48% / 52% 46% 54% 48%;
+  box-shadow: inset 0 6px 10px rgba(255,255,255,.35), inset 0 -16px 26px rgba(0,0,0,.25),
+    0 20px 44px -10px rgba(123,63,242,.6);
+  overflow:hidden; color:#fff;
+  animation: blobMorph 7s ease-in-out infinite, blobWobble 3.6s ease-in-out infinite;
+}
+.c-squish[data-state="paused"] .sq-blob { animation-play-state: paused; transform: scaleY(.84); }
+@keyframes blobMorph {
+  0%,100% { border-radius: 46% 54% 52% 48% / 52% 46% 54% 48%; }
+  33%     { border-radius: 56% 44% 47% 53% / 44% 58% 42% 56%; }
+  66%     { border-radius: 48% 52% 58% 42% / 56% 48% 52% 44%; }
+}
+@keyframes blobWobble { 0%,100%{ transform: rotate(-3deg);} 50%{ transform: rotate(3deg);} }
+
+/* liquid fill */
+.sq-liquid { position:absolute; left:-25%; right:-25%; bottom:0; height:54%; z-index:1; }
+.sq-liquid::before, .sq-liquid::after {
+  content:""; position:absolute; left:0; top:-58%; width:100%; height:160%;
+  background: var(--liquid); }
+.sq-liquid::before { border-radius:43% 47% 0 0 / 38% 42% 0 0; animation: wave 5.5s linear infinite; }
+.sq-liquid::after  { border-radius:47% 43% 0 0 / 42% 38% 0 0; opacity:.7; animation: wave 7.5s linear infinite reverse; }
+@keyframes wave { from{ transform: translateX(-12%) rotate(0); } to{ transform: translateX(12%) rotate(0);} }
+.c-squish[data-state="awake"] .sq-liquid { display:none; }
+
+.sq-readout { position:absolute; inset:0; z-index:3; display:flex; align-items:center;
+  justify-content:center; pointer-events:none; font-size:46px; font-weight:800;
+  font-variant-numeric:tabular-nums; letter-spacing:-.01em; white-space:nowrap;
+  text-shadow:0 2px 12px rgba(0,0,0,.4); }
+.sq-readout.dim { color: rgba(255,255,255,.72); }
+.sq-actions { display:flex; gap:12px; align-items:center; justify-content:center; flex:0 0 auto; }
+.sq-actions .pill { height:60px; font-size:23px; min-width:128px; }
+.sq-actions .ghost { height:60px; min-width:104px; }

@@ -1,0 +1,19 @@
+[project]
+name = "baby-svc"
+version = "0.1.0"
+description = "Self-hosted API over Huckleberry sleep tracking for the watch + phone clients"
+requires-python = ">=3.14"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "huckleberry-api",
+    "aiohttp>=3.10",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
