@@ -7,3 +7,4 @@ state.db
 .env
 Huckleberry companion.zip
 LOCAL_NOTES.md
+*.crt

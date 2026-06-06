@@ -170,7 +170,7 @@ This entire section used to be the hardest part of the architecture (Termux boot
 
 ## Auth & secrets
 
-- **Clients ↔ VM:** TLS via self-signed cert pinned in the apps + static bearer token. Token lives in `/etc/baby-svc.env` on the VM and in client build config. Rotate by changing both. The cert (`baby-svc.crt`) is public material — fine to commit to the repo; the key (`baby-svc.key`) stays on the VM only.
+- **Clients ↔ VM:** TLS via self-signed cert pinned in the apps + static bearer token. Token lives in `/etc/baby-svc.env` on the VM and in client build config. Rotate by changing both. The cert (`baby-svc.crt`) is cryptographically public material, but its SAN embeds the VM's IP — since the repo is public, it stays **gitignored** (kept locally + regenerable on the VM); the key (`baby-svc.key`) stays on the VM only.
 - **VM ↔ Huckleberry:** email + password in `/etc/baby-svc.env`. Refresh token + `child_uid` in `~/baby-svc/state.db`.
 - **Backups:** `/etc/baby-svc.env` (Huckleberry creds + bearer token) should be backed up off-VM (password manager). `state.db` is reconstructible from creds — no backup needed. `baby-svc.key` is regenerable (just rebuild clients) — backup optional.
 - **Exposure note:** port 8001 is open to the internet — uvicorn will see background scanner noise. TLS + bearer middleware rejects all of it; the 6-route surface keeps risk small. Keep the VM patched.
@@ -259,7 +259,7 @@ huckleberry_companion/
 │   ├── deploy/
 │   │   ├── baby-svc.service           (systemd unit, uvicorn :8001 + TLS)
 │   │   ├── gen-cert.sh                (one-shot self-signed cert generation)
-│   │   ├── baby-svc.crt               (public cert — committed; pinned by clients)
+│   │   ├── baby-svc.crt               (pinned by clients — gitignored: SAN has the IP, repo is public)
 │   │   └── README.md                  (VM install steps, belgrade-pattern)
 │   └── tests/
 ├── watch_app/                         (Wear OS app, Squish UI — build second)
