@@ -15,6 +15,7 @@ from typing import Any
 import aiohttp
 from huckleberry_api import HuckleberryAPI
 
+from child_select import match_child_by_nickname
 from state import Store
 from status_logic import compute_status, latest_interval_end
 
@@ -41,6 +42,7 @@ class HuckleberryService:
         tz: str,
         websession: aiohttp.ClientSession,
         store: Store,
+        child_nickname: str | None = None,
     ) -> "HuckleberryService":
         api = HuckleberryAPI(
             email=email, password=password, timezone=tz, websession=websession
@@ -61,17 +63,41 @@ class HuckleberryService:
         else:
             await api.authenticate()
 
-        child_uid = store.get("child_uid")
+        # Cache key includes the nickname so switching HB_CHILD_NICKNAME (e.g.
+        # to a test child and back) re-resolves instead of reusing a stale uid.
+        cache_key = f"child_uid:{child_nickname or '<first>'}"
+        child_uid = store.get(cache_key)
         if not child_uid:
-            user = await api.get_user()
-            if user is None or not user.childList:
-                raise RuntimeError("Huckleberry account has no children configured")
-            child_uid = user.childList[0].cid
-            store.set("child_uid", child_uid)
+            child_uid = await cls._resolve_child(api, child_nickname)
+            store.set(cache_key, child_uid)
 
         svc = cls(api, child_uid, store)
         svc._persist_tokens()
         return svc
+
+    @staticmethod
+    async def _resolve_child(api: HuckleberryAPI, nickname: str | None) -> str:
+        user = await api.get_user()
+        if user is None or not user.childList:
+            raise RuntimeError("Huckleberry account has no children configured")
+        if nickname is None:
+            return user.childList[0].cid
+
+        cid = match_child_by_nickname(user.childList, nickname)
+        if cid:
+            return cid
+        # Nicknames can be unset on the user doc — fall back to the child
+        # documents' display names.
+        names = []
+        for ref in user.childList:
+            child = await api.get_child(ref.cid)
+            name = getattr(child, "childsName", None) if child else None
+            if name and name.strip().casefold() == nickname.strip().casefold():
+                return ref.cid
+            names.append(name or ref.nickname or ref.cid)
+        raise RuntimeError(
+            f"no child named {nickname!r}; available: {names}"
+        )
 
     async def status(self) -> dict[str, Any]:
         async with self._lock:

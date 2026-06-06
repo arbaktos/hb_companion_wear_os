@@ -51,6 +51,9 @@ async def lifespan(app: FastAPI):
             tz=os.environ.get("HB_TIMEZONE", "UTC"),
             websession=websession,
             store=store,
+            # Optional: target a specific child by name (e.g. a test child).
+            # Unset → first child in the account.
+            child_nickname=os.environ.get("HB_CHILD_NICKNAME") or None,
         )
         yield
 
