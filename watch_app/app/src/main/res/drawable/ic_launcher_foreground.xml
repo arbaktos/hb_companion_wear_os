@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Simple blob-on-dusk launcher icon. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#FB8AA3"
+        android:pathData="M54,30 C68,28 80,40 79,54 C78,68 68,79 54,78 C40,77 29,68 30,54 C31,40 40,32 54,30 Z" />
+    <path
+        android:fillColor="#FFD9BD"
+        android:pathData="M47,44 C50,42 54,43 55,46 C56,49 53,52 50,52 C47,52 44,46 47,44 Z" />
+</vector>

@@ -8,3 +8,10 @@ state.db
 Huckleberry companion.zip
 LOCAL_NOTES.md
 *.crt
+.gradle/
+build/
+local.properties
+secrets.properties
+.idea/
+*.iml
+.kotlin/
