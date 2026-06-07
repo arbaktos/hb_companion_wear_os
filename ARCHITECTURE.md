@@ -106,6 +106,8 @@ Auth on top of the transport:
 
 Caveat to accept: **the cert is bound to the VM's IP.** If the VM's IP ever changes (provider migration), regenerate the cert and rebuild the clients. For a VPS with a static IP this is a rare event, but it's the price of skipping a domain.
 
+**Amendment (2026-06-07, Garmin client):** Garmin Connect IQ's `makeWebRequest` validates against system/Garmin trust stores with no custom-pin API, so the self-signed cert can't serve it. Surprise: **Let's Encrypt successfully issued for the nip.io hostname** (the shared-rate-limit lottery paid out), so a second uvicorn instance (`baby-svc-public.service`, port **8443**, same app/env, own state DB) serves a publicly trusted chain in parallel. Wear OS keeps the pinned `:8001`; Garmin and future clients use `:8443`. Renewal: certbot timer + deploy hook (copies certs to `~babysvc/certs/le/`, restarts the public unit). Known risk: each ~60-day renewal re-enters the nip.io rate-limit lottery — certbot retries twice daily for 30 days before expiry, but if it ever loses, fallback remains a $10 domain.
+
 ## What each layer owns
 
 ### Wear OS watch app
