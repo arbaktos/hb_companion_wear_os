@@ -1,0 +1,27 @@
+# Public-trust twin of baby-svc: same app, same env, port 8443, Let's Encrypt
+# cert (chain trusted by Garmin/anything) instead of the pinned self-signed one
+# on :8001. Both run in parallel — Wear OS pins :8001, Connect IQ uses :8443.
+# Certs land in /home/babysvc/certs/le/ via the certbot deploy hook
+# (/etc/letsencrypt/renewal-hooks/deploy/baby-svc.sh), which also restarts
+# this unit on each renewal.
+[Unit]
+Description=Huckleberry baby sleep API (public TLS, :8443)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=babysvc
+Group=babysvc
+WorkingDirectory=/home/babysvc/huckleberry_companion/python_service
+EnvironmentFile=/etc/baby-svc.env
+# Own session store — don't share SQLite with the :8001 instance.
+Environment=STATE_DB=state-public.db
+ExecStart=/home/babysvc/huckleberry_companion/python_service/.venv/bin/uvicorn main:app \
+  --host 0.0.0.0 --port 8443 --workers 1 --limit-max-requests 1000 \
+  --ssl-keyfile /home/babysvc/certs/le/privkey.pem \
+  --ssl-certfile /home/babysvc/certs/le/fullchain.pem
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
