@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<iq:manifest xmlns:iq="http://www.garmin.com/xml/connectiq" version="3">
+    <iq:application
+        id="a063a97160ea485581682f1cbfd7dd97"
+        entry="BabyApp"
+        launcherIcon="@Drawables.LauncherIcon"
+        name="@Strings.AppName"
+        type="watch-app"
+        minApiLevel="4.0.0">
+        <iq:products>
+            <iq:product id="fenix8solar51mm"/>
+            <iq:product id="fenix8solar47mm"/>
+        </iq:products>
+        <iq:permissions>
+            <iq:uses-permission id="Communications"/>
+        </iq:permissions>
+        <iq:languages>
+            <iq:language>eng</iq:language>
+        </iq:languages>
+        <iq:barrels/>
+    </iq:application>
+</iq:manifest>

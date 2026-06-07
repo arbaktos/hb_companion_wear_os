@@ -15,3 +15,5 @@ secrets.properties
 .idea/
 *.iml
 .kotlin/
+garmin_app/source/Secrets.mc
+garmin_app/build/
