@@ -1,15 +1,14 @@
 package com.arbaktos.babywatch.ui
 
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.os.SystemClock
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.keyframes
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -33,6 +32,7 @@ import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.produceState
@@ -43,8 +43,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageShader
+import androidx.compose.ui.graphics.ShaderBrush
+import androidx.compose.ui.graphics.TileMode
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
@@ -53,12 +58,15 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.util.lerp
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.wear.compose.material.Icon
 import androidx.wear.compose.material.Text
 import com.arbaktos.babywatch.R
+import kotlin.math.PI
+import kotlin.math.sin
 import kotlinx.coroutines.delay
 
 private val Comfortaa = FontFamily(Font(R.font.comfortaa))
@@ -66,6 +74,8 @@ private val Comfortaa = FontFamily(Font(R.font.comfortaa))
 /** All proportions are fractions of the 456px design canvas. */
 private const val BLOB_FRACTION = 280f / 456f
 private const val TIMER_FRACTION = 54f / 456f
+private const val PATTERN_TILE_FRACTION = 300f / 456f
+private const val PATTERN_ALPHA = 0.20f
 
 @Composable
 fun SquishScreen(viewModel: SleepViewModel = viewModel()) {
@@ -77,7 +87,7 @@ fun SquishScreen(viewModel: SleepViewModel = viewModel()) {
         onPauseOrDispose { }
     }
 
-    // 500ms display ticker on the monotonic clock.
+    // 500ms display ticker on the monotonic clock (timer text only).
     val nowRealtime by produceState(SystemClock.elapsedRealtime()) {
         while (true) {
             value = SystemClock.elapsedRealtime()
@@ -85,19 +95,41 @@ fun SquishScreen(viewModel: SleepViewModel = viewModel()) {
         }
     }
 
+    // One continuous animation clock, in seconds. All idle motion is computed
+    // as sine waves of this clock, so state changes never reset or jump the
+    // motion — only the per-state amplitude WEIGHTS below crossfade. This is
+    // what makes awake->asleep morph instead of freeze-and-relaunch.
+    val clock = produceState(0f) {
+        var start = -1L
+        while (true) {
+            androidx.compose.runtime.withFrameNanos { nanos ->
+                if (start < 0) start = nanos
+                value = (nanos - start) / 1_000_000_000f
+            }
+        }
+    }
+
+    // Per-state motion weights, crossfaded in sync with the palette (700ms).
+    val awakeW by animateFloatAsState(
+        if (state.phase == Phase.SLEEPING || state.phase == Phase.PAUSED) 0f else 1f,
+        tween(700, easing = FastOutSlowInEasing), label = "awakeW",
+    )
+    val sleepW by animateFloatAsState(
+        if (state.phase == Phase.SLEEPING) 1f else 0f,
+        tween(700, easing = FastOutSlowInEasing), label = "sleepW",
+    )
+    val pausedW by animateFloatAsState(
+        if (state.phase == Phase.PAUSED) 1f else 0f,
+        tween(600, easing = FastOutSlowInEasing), label = "pausedW",
+    )
+
     val palette = paletteFor(state.phase)
-    // Palette crossfade per handoff: bg 800ms, blob/glow 700ms, dim 600ms.
+    // Palette crossfade per handoff: bg 800ms, blob/glow 700ms.
     val bgFrom by animateColorAsState(palette.bgFrom, tween(800), label = "bgFrom")
     val bgTo by animateColorAsState(palette.bgTo, tween(800), label = "bgTo")
     val blobFrom by animateColorAsState(palette.blobFrom, tween(700), label = "blobFrom")
     val blobTo by animateColorAsState(palette.blobTo, tween(700), label = "blobTo")
     val glow by animateColorAsState(palette.glow, tween(700), label = "glow")
-    // Approximates the handoff's brightness(0.84) saturate(0.72) paused filter.
-    val dim by animateColorAsState(
-        if (state.phase == Phase.PAUSED) Color.Black.copy(alpha = 0.16f) else Color.Transparent,
-        tween(600),
-        label = "dim",
-    )
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val screen = maxWidth
@@ -120,12 +152,20 @@ fun SquishScreen(viewModel: SleepViewModel = viewModel()) {
                 )
         )
 
-        // TODO(design): tiled doodle wallpaper layer (awake-pattern.svg /
-        // night-pattern.svg, white @ 20%) goes here, between gradient and blob.
+        // Doodle wallpaper: toys when awake, sheep+moons at night, white @20%,
+        // crossfading with the same weights as the motion.
+        PatternLayer(
+            awakeAlpha = PATTERN_ALPHA * awakeW,
+            nightAlpha = PATTERN_ALPHA * (sleepW + pausedW).coerceAtMost(1f),
+            tilePx = (screenPx * PATTERN_TILE_FRACTION).toInt(),
+        )
 
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Blob(
-                phase = state.phase,
+                clock = clock,
+                awakeW = awakeW,
+                sleepW = sleepW,
+                pausedW = pausedW,
                 blobFrom = blobFrom,
                 blobTo = blobTo,
                 glow = glow,
@@ -161,18 +201,46 @@ fun SquishScreen(viewModel: SleepViewModel = viewModel()) {
             }
         }
 
-        // Paused dim scrim over everything.
+        // Paused dim scrim (approximates brightness 0.84 + desaturation).
         Box(
             Modifier
                 .fillMaxSize()
-                .background(dim)
+                .background(Color.Black.copy(alpha = 0.16f * pausedW))
         )
+    }
+}
+
+/** Two stacked repeating tiles, crossfaded by alpha. */
+@Composable
+private fun PatternLayer(awakeAlpha: Float, nightAlpha: Float, tilePx: Int) {
+    if (tilePx <= 0) return
+    val awakeBrush = rememberTileBrush(R.drawable.pattern_awake, tilePx)
+    val nightBrush = rememberTileBrush(R.drawable.pattern_night, tilePx)
+    if (awakeAlpha > 0.005f) {
+        Box(Modifier.fillMaxSize().background(awakeBrush, alpha = awakeAlpha.coerceIn(0f, 1f)))
+    }
+    if (nightAlpha > 0.005f) {
+        Box(Modifier.fillMaxSize().background(nightBrush, alpha = nightAlpha.coerceIn(0f, 1f)))
+    }
+}
+
+@Composable
+private fun rememberTileBrush(resId: Int, tilePx: Int): Brush {
+    val context = LocalContext.current
+    return remember(resId, tilePx) {
+        val src = BitmapFactory.decodeResource(context.resources, resId)
+        val scaled = Bitmap.createScaledBitmap(src, tilePx, tilePx, true)
+        if (scaled !== src) src.recycle()
+        ShaderBrush(ImageShader(scaled.asImageBitmap(), TileMode.Repeated, TileMode.Repeated))
     }
 }
 
 @Composable
 private fun Blob(
-    phase: Phase,
+    clock: State<Float>,
+    awakeW: Float,
+    sleepW: Float,
+    pausedW: Float,
     blobFrom: Color,
     blobTo: Color,
     glow: Color,
@@ -180,55 +248,33 @@ private fun Blob(
     onTap: () -> Unit,
     content: @Composable () -> Unit,
 ) {
-    // --- Idle motion (per handoff §Motion) ----------------------------------
-    val idle = rememberInfiniteTransition(label = "idle")
+    val t by clock
+    // sin wave helper: period in seconds, phase in turns.
+    fun wave(period: Float, phase: Float = 0f): Float =
+        sin((t / period + phase) * 2f * PI.toFloat())
 
-    // Jiggle (awake): ~1.5s rotation sway.
-    val jiggleRot by idle.animateFloat(
-        initialValue = -4f,
-        targetValue = -4f,
-        animationSpec = infiniteRepeatable(
-            keyframes {
-                durationMillis = 1500
-                -4f at 0
-                3f at 500
-                -3f at 900
-                4f at 1200
-                -4f at 1500
-            },
-        ),
-        label = "jiggleRot",
-    )
-    // Breathing (sleeping): 4.6s loop, scale 0.96 <-> 1.06.
-    val breath by idle.animateFloat(
-        initialValue = 0.96f,
-        targetValue = 1.06f,
-        animationSpec = infiniteRepeatable(
-            tween(2300, easing = FastOutSlowInEasing),
-            RepeatMode.Reverse,
-        ),
-        label = "breath",
-    )
-    // Organic morph: corner percentages slowly cycling (~7.5s), approximating
-    // the CSS border-radius keyframes. Two independent periods so the shape
-    // never repeats exactly.
-    val morphA by idle.animateFloat(
-        initialValue = 44f,
-        targetValue = 58f,
-        animationSpec = infiniteRepeatable(
-            tween(3700, easing = FastOutSlowInEasing),
-            RepeatMode.Reverse,
-        ),
-        label = "morphA",
-    )
-    val morphB by idle.animateFloat(
-        initialValue = 56f,
-        targetValue = 42f,
-        animationSpec = infiniteRepeatable(
-            tween(4100, easing = FastOutSlowInEasing),
-            RepeatMode.Reverse,
-        ),
-        label = "morphB",
+    // --- Continuous idle motion (per handoff §Motion) ------------------------
+    // Jiggle (awake): ~1.5s rotation sway + faster secondary wobble.
+    val rot = awakeW * (3.2f * wave(1.5f) + 0.9f * wave(0.9f, 0.33f))
+    // Breathing (sleeping): 4.6s, scale 0.96<->1.06 (center 1.01, amp 0.05).
+    val breathe = sleepW * (0.01f + 0.05f * wave(4.6f))
+    // Awake micro-bounce.
+    val bounceX = awakeW * 0.018f * wave(0.75f, 0.2f)
+    val bounceY = awakeW * 0.022f * wave(0.75f, 0.45f)
+
+    // Organic morph: four corner percentages drifting independently; paused
+    // dampens to a settled round shape. Wider asymmetry than v1.
+    val morphAmp = 1f - pausedW * 0.85f
+    fun corner(base: Float, p1: Float, p2: Float, ph: Float) =
+        (base + morphAmp * (8f * sin((t / p1 + ph) * 2f * PI.toFloat()) +
+            4f * sin((t / p2 + ph * 2.7f) * 2f * PI.toFloat())))
+            .toInt().coerceIn(34, 66)
+
+    val shape = RoundedCornerShape(
+        topStartPercent = corner(50f, 7.5f, 3.4f, 0.00f),
+        topEndPercent = corner(50f, 8.3f, 4.1f, 0.31f),
+        bottomEndPercent = corner(50f, 6.9f, 3.8f, 0.62f),
+        bottomStartPercent = corner(50f, 7.9f, 4.5f, 0.87f),
     )
 
     // Tap squish: squash-and-stretch keyframes, ~550ms (handoff §Motion).
@@ -260,37 +306,22 @@ private fun Blob(
         )
     }
 
-    val rot: Float
-    val idleScaleX: Float
-    val idleScaleY: Float
-    when (phase) {
-        Phase.SLEEPING -> { rot = 0f; idleScaleX = breath; idleScaleY = breath }
-        Phase.PAUSED -> { rot = 0f; idleScaleX = 1f; idleScaleY = 0.94f } // motion halts
-        else -> { // awake/loading/error: jiggle
-            rot = jiggleRot
-            val s = 1f + (breath - 1f) * 0.3f
-            idleScaleX = s; idleScaleY = s
-        }
-    }
-
-    val morphShape = if (phase == Phase.PAUSED) {
-        RoundedCornerShape(50) // settles round
-    } else {
-        RoundedCornerShape(
-            topStartPercent = morphA.toInt(),
-            topEndPercent = (100 - morphA).toInt(),
-            bottomEndPercent = morphB.toInt(),
-            bottomStartPercent = (100 - morphB).toInt(),
-        )
-    }
+    val scaleX = (1f + bounceX + breathe) * squishX.value
+    val scaleY = (1f + bounceY + breathe) * lerp(1f, 0.94f, pausedW) * squishY.value
 
     val sizePx = with(LocalDensity.current) { size.toPx() }
 
     Box(contentAlignment = Alignment.Center) {
-        // Glow halo behind the blob (stands in for the CSS outer box-shadow).
+        // Glow halo behind the blob (stands in for the CSS outer box-shadow);
+        // breathes gently along with the blob.
         Box(
             Modifier
                 .size(size * 1.35f)
+                .graphicsLayer {
+                    val g = 1f + breathe * 0.8f
+                    this.scaleX = g
+                    this.scaleY = g
+                }
                 .background(
                     Brush.radialGradient(
                         0f to glow,
@@ -303,10 +334,10 @@ private fun Blob(
                 .size(size)
                 .graphicsLayer {
                     rotationZ = rot
-                    scaleX = idleScaleX * squishX.value
-                    scaleY = idleScaleY * squishY.value
+                    this.scaleX = scaleX
+                    this.scaleY = scaleY
                 }
-                .clip(morphShape)
+                .clip(shape)
                 .background(
                     Brush.radialGradient(
                         0f to blobFrom,
