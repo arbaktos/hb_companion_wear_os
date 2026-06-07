@@ -398,7 +398,9 @@ private fun BlobContent(
         if (action != null) {
             ActionChip(action.first, action.second, screenWidth)
         }
-        if (state.phase == Phase.ERROR) {
+        // Shown on initial-load failure (ERROR) and transiently when an
+        // optimistic action snapped back.
+        if (state.phase == Phase.ERROR || state.errorMessage != null) {
             Text(
                 text = "phone nearby?",
                 fontFamily = Comfortaa,
