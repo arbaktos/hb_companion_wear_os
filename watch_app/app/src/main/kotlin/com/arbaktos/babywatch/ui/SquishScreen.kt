@@ -62,9 +62,13 @@ import androidx.compose.ui.util.lerp
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.viewmodel.viewModelFactory
+import androidx.wear.compose.material.CircularProgressIndicator
 import androidx.wear.compose.material.Icon
 import androidx.wear.compose.material.Text
 import com.arbaktos.babywatch.R
+import com.arbaktos.babywatch.data.BabyApi
 import kotlin.math.PI
 import kotlin.math.sin
 import kotlinx.coroutines.delay
@@ -78,7 +82,16 @@ private const val PATTERN_TILE_FRACTION = 300f / 456f
 private const val PATTERN_ALPHA = 0.20f
 
 @Composable
-fun SquishScreen(viewModel: SleepViewModel = viewModel()) {
+fun SquishScreen() {
+    // App-scoped Context for the real client; the factory lets the ViewModel
+    // take an injected SleepApi (so it stays unit-testable) while production
+    // still wires in the live BabyApi.
+    val appContext = LocalContext.current.applicationContext
+    val viewModel: SleepViewModel = viewModel(
+        factory = viewModelFactory {
+            initializer { SleepViewModel(BabyApi(appContext)) }
+        },
+    )
     val state by viewModel.state.collectAsStateWithLifecycle()
 
     // Poll on every resume; actions refresh implicitly (they return status).
@@ -160,6 +173,12 @@ fun SquishScreen(viewModel: SleepViewModel = viewModel()) {
             tilePx = (screenPx * PATTERN_TILE_FRACTION).toInt(),
         )
 
+        // Waiting on the network for something the user can't act through:
+        // the initial load, or a tapped action's confirmation. The blob goes
+        // non-interactive and shows a spinner so feedback matches reality
+        // (a passive background poll is NOT waiting — it leaves the blob live).
+        val waiting = state.phase == Phase.LOADING || state.actionInFlight
+
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Blob(
                 clock = clock,
@@ -170,6 +189,7 @@ fun SquishScreen(viewModel: SleepViewModel = viewModel()) {
                 blobTo = blobTo,
                 glow = glow,
                 size = blobSize,
+                enabled = !waiting,
                 onTap = {
                     when (state.phase) {
                         Phase.AWAKE -> viewModel.startSleep()
@@ -180,7 +200,7 @@ fun SquishScreen(viewModel: SleepViewModel = viewModel()) {
                     }
                 },
             ) {
-                BlobContent(state, nowRealtime, timerSize, screenWidth = screen)
+                BlobContent(state, nowRealtime, timerSize, screenWidth = screen, waiting = waiting)
             }
         }
 
@@ -194,7 +214,7 @@ fun SquishScreen(viewModel: SleepViewModel = viewModel()) {
                 exit = fadeOut(tween(400)),
             ) {
                 Box(Modifier.padding(bottom = screen * (30f / 456f))) {
-                    StopButton(screenWidth = screen, enabled = !state.inFlight) {
+                    StopButton(screenWidth = screen, enabled = !state.actionInFlight) {
                         viewModel.stopSleep()
                     }
                 }
@@ -245,6 +265,7 @@ private fun Blob(
     blobTo: Color,
     glow: Color,
     size: Dp,
+    enabled: Boolean,
     onTap: () -> Unit,
     content: @Composable () -> Unit,
 ) {
@@ -350,7 +371,11 @@ private fun Blob(
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
+                    enabled = enabled,
                 ) {
+                    // Squish only fires here, so it can no longer play on a tap
+                    // the ViewModel would have dropped — the blob is disabled
+                    // exactly when a tap wouldn't do anything.
                     tapCount.longValue++
                     onTap()
                 },
@@ -367,6 +392,7 @@ private fun BlobContent(
     nowRealtime: Long,
     timerSize: TextUnit,
     screenWidth: Dp,
+    waiting: Boolean,
 ) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -388,15 +414,27 @@ private fun BlobContent(
             maxLines = 1,
         )
 
-        val action: Pair<ImageVector, String>? = when (state.phase) {
-            Phase.AWAKE -> Icons.Rounded.Bedtime to "Start"
-            Phase.SLEEPING -> Icons.Rounded.Pause to "Pause"
-            Phase.PAUSED -> Icons.Rounded.PlayArrow to "Resume"
-            Phase.ERROR -> Icons.Rounded.Refresh to "Retry"
-            Phase.LOADING -> null
-        }
-        if (action != null) {
-            ActionChip(action.first, action.second, screenWidth)
+        if (waiting) {
+            // Confirming with the server: a spinner replaces the action chip
+            // (the blob is non-interactive meanwhile), so the UI shows it's
+            // working rather than silently swallowing taps.
+            CircularProgressIndicator(
+                modifier = Modifier.size(screenWidth * (30f / 456f)),
+                strokeWidth = (screenWidth.value * 3f / 456f).dp,
+                indicatorColor = Color.White.copy(alpha = 0.9f),
+                trackColor = Color.White.copy(alpha = 0.22f),
+            )
+        } else {
+            val action: Pair<ImageVector, String>? = when (state.phase) {
+                Phase.AWAKE -> Icons.Rounded.Bedtime to "Start"
+                Phase.SLEEPING -> Icons.Rounded.Pause to "Pause"
+                Phase.PAUSED -> Icons.Rounded.PlayArrow to "Resume"
+                Phase.ERROR -> Icons.Rounded.Refresh to "Retry"
+                Phase.LOADING -> null
+            }
+            if (action != null) {
+                ActionChip(action.first, action.second, screenWidth)
+            }
         }
         // Shown on initial-load failure (ERROR) and transiently when an
         // optimistic action snapped back.

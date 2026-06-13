@@ -31,12 +31,24 @@ data class SleepStatus(
 class ApiException(message: String) : IOException(message)
 
 /**
+ * The sleep-tracking calls the ViewModel depends on. Extracted as an interface
+ * so the ViewModel can be unit-tested against a fake (no Context, no network).
+ */
+interface SleepApi {
+    suspend fun status(): SleepStatus
+    suspend fun start(): SleepStatus
+    suspend fun pause(): SleepStatus
+    suspend fun resume(): SleepStatus
+    suspend fun stop(): SleepStatus
+}
+
+/**
  * Thin HTTPS client for baby-svc. TLS trusts exactly the bundled self-signed
  * cert (res/raw/baby_svc.crt — gitignored, copy from python_service/deploy/),
  * which is both stronger than CA trust and keeps the repo free of the VM
  * address. 10s timeout per the architecture; errors surface as ApiException.
  */
-class BabyApi(context: Context) {
+class BabyApi(context: Context) : SleepApi {
 
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -53,12 +65,12 @@ class BabyApi(context: Context) {
             .build()
     }
 
-    suspend fun status(): SleepStatus = call("GET", "/status")
+    override suspend fun status(): SleepStatus = call("GET", "/status")
 
-    suspend fun start(): SleepStatus = call("POST", "/sleep/start")
-    suspend fun pause(): SleepStatus = call("POST", "/sleep/pause")
-    suspend fun resume(): SleepStatus = call("POST", "/sleep/resume")
-    suspend fun stop(): SleepStatus = call("POST", "/sleep/stop")
+    override suspend fun start(): SleepStatus = call("POST", "/sleep/start")
+    override suspend fun pause(): SleepStatus = call("POST", "/sleep/pause")
+    override suspend fun resume(): SleepStatus = call("POST", "/sleep/resume")
+    override suspend fun stop(): SleepStatus = call("POST", "/sleep/stop")
 
     private suspend fun call(method: String, path: String): SleepStatus =
         withContext(Dispatchers.IO) {

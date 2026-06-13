@@ -1,10 +1,9 @@
 package com.arbaktos.babywatch.ui
 
-import android.app.Application
 import android.os.SystemClock
-import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.arbaktos.babywatch.data.BabyApi
+import com.arbaktos.babywatch.data.SleepApi
 import com.arbaktos.babywatch.data.SleepStatus
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -41,32 +40,54 @@ data class SleepUiState(
     val serverTimeAtFetch: Double? = null,
     /** SystemClock.elapsedRealtime() when the snapshot was fetched. */
     val fetchedAtRealtime: Long = 0L,
-    /** An action or refresh is in flight — guards double-taps. */
-    val inFlight: Boolean = false,
+    /**
+     * A user action (start/pause/resume/stop) is awaiting the server. The blob
+     * is non-interactive and shows a spinner while this is true. Deliberately
+     * NOT set by a background poll — a passive refresh must never block a tap
+     * (that was the "tap squishes but nothing happens" bug).
+     */
+    val actionInFlight: Boolean = false,
     val errorMessage: String? = null,
 )
 
-class SleepViewModel(application: Application) : AndroidViewModel(application) {
-
-    private val api = BabyApi(application)
+class SleepViewModel(
+    private val api: SleepApi,
+    private val now: () -> Long = { SystemClock.elapsedRealtime() },
+) : ViewModel() {
 
     private val _state = MutableStateFlow(SleepUiState())
     val state: StateFlow<SleepUiState> = _state.asStateFlow()
 
+    /** A status poll is in flight. Separate from [actionInFlight] so a poll
+     *  never blocks an action and never disables the blob. */
+    private var isRefreshing = false
+
+    /** Bumped by every action. A poll started before an action captures this
+     *  token and discards its (now stale) result if the token has moved — so a
+     *  late refresh can't clobber a fresher optimistic/confirmed state. */
+    private var actionGen = 0L
+
     fun refresh() {
-        if (_state.value.inFlight) return
-        _state.update { it.copy(inFlight = true) }
+        // An action already covers us (its response is fresher than any poll),
+        // and we never stack polls.
+        if (isRefreshing || _state.value.actionInFlight) return
+        isRefreshing = true
+        val gen = actionGen
         viewModelScope.launch {
             try {
-                apply(api.status())
+                val status = api.status()
+                if (gen == actionGen && !_state.value.actionInFlight) apply(status)
             } catch (e: Exception) {
-                _state.update {
-                    it.copy(
-                        phase = if (it.phase == Phase.LOADING) Phase.ERROR else it.phase,
-                        inFlight = false,
-                        errorMessage = e.message ?: "request failed",
-                    )
+                if (gen == actionGen && !_state.value.actionInFlight) {
+                    _state.update {
+                        it.copy(
+                            phase = if (it.phase == Phase.LOADING) Phase.ERROR else it.phase,
+                            errorMessage = e.message ?: "request failed",
+                        )
+                    }
                 }
+            } finally {
+                isRefreshing = false
             }
         }
     }
@@ -78,9 +99,12 @@ class SleepViewModel(application: Application) : AndroidViewModel(application) {
 
     /** Optimistic action: predict -> request -> reconcile (or snap back). */
     private fun act(kind: String, call: suspend () -> SleepStatus) {
-        if (_state.value.inFlight) return
+        // One action at a time; the UI also disables the blob while in flight,
+        // so this guard is just defence in depth, not the primary gate.
+        if (_state.value.actionInFlight) return
         val before = _state.value
-        _state.value = predict(kind, before).copy(inFlight = true, errorMessage = null)
+        actionGen++ // supersede any in-flight refresh
+        _state.value = predict(kind, before).copy(actionInFlight = true, errorMessage = null)
         viewModelScope.launch {
             try {
                 apply(call())
@@ -88,7 +112,7 @@ class SleepViewModel(application: Application) : AndroidViewModel(application) {
                 // Snap back; the visible revert is the failure signal, plus a
                 // transient message.
                 _state.value = before.copy(
-                    inFlight = false,
+                    actionInFlight = false,
                     errorMessage = e.message ?: "request failed",
                 )
                 clearErrorLater()
@@ -98,7 +122,7 @@ class SleepViewModel(application: Application) : AndroidViewModel(application) {
 
     /** Local guess at what the server will say; corrected on reconcile. */
     private fun predict(kind: String, s: SleepUiState): SleepUiState {
-        val nowRt = SystemClock.elapsedRealtime()
+        val nowRt = now()
         return when (kind) {
             "start" -> s.copy(
                 phase = Phase.SLEEPING,
@@ -146,8 +170,8 @@ class SleepViewModel(application: Application) : AndroidViewModel(application) {
             awakeElapsedSec = status.lastSleepEnd?.let { status.serverTime - it },
             sessionStartedAt = status.sessionStartedAt,
             serverTimeAtFetch = status.serverTime,
-            fetchedAtRealtime = SystemClock.elapsedRealtime(),
-            inFlight = false,
+            fetchedAtRealtime = now(),
+            actionInFlight = false,
             errorMessage = null,
         )
     }
@@ -155,7 +179,7 @@ class SleepViewModel(application: Application) : AndroidViewModel(application) {
     private fun clearErrorLater() {
         viewModelScope.launch {
             delay(3000)
-            _state.update { if (it.inFlight) it else it.copy(errorMessage = null) }
+            _state.update { if (it.actionInFlight) it else it.copy(errorMessage = null) }
         }
     }
 }
