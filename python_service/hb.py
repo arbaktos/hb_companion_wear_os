@@ -8,9 +8,11 @@ only file to fix. main.py knows only HuckleberryService.
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from datetime import UTC, datetime, timedelta
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import aiohttp
 from huckleberry_api import HuckleberryAPI
@@ -19,8 +21,15 @@ from child_select import match_child_by_nickname
 from state import Store
 from status_logic import compute_status, latest_interval_end
 
+log = logging.getLogger(__name__)
+
 # How far back to look for the most recent completed interval (last_sleep_end).
 LOOKBACK_DAYS = 7
+
+# Store key for the timezone last reported by a capable client (Wear OS). This
+# is the source of truth across restarts and is shared by all clients — see
+# _apply_timezone for the reconcile rules.
+_TZ_KEY = "timezone"
 
 _ACTIONS = ("start", "pause", "resume", "stop")
 
@@ -30,6 +39,9 @@ class HuckleberryService:
         self.api = api
         self.child_uid = child_uid
         self.store = store
+        # The IANA zone currently applied to self.api._timezone. Tracked here so
+        # reconcile is a cheap string compare instead of touching the library.
+        self._current_tz: str | None = None
         # One user, one gRPC channel — serialize upstream calls.
         self._lock = asyncio.Lock()
 
@@ -72,6 +84,10 @@ class HuckleberryService:
             store.set(cache_key, child_uid)
 
         svc = cls(api, child_uid, store)
+        # A previously reported zone (from Wear OS) outranks the HB_TIMEZONE
+        # seed: the env var only matters until a capable client first reports.
+        # persist=False — we are reading the store, not writing a new value.
+        svc._apply_timezone(store.get(_TZ_KEY) or tz, persist=False)
         svc._persist_tokens()
         return svc
 
@@ -99,17 +115,19 @@ class HuckleberryService:
             f"no child named {nickname!r}; available: {names}"
         )
 
-    async def status(self) -> dict[str, Any]:
+    async def status(self, tz: str | None = None) -> dict[str, Any]:
         async with self._lock:
+            self._apply_timezone(tz, persist=True)
             await self._fresh_session()
             return await self._build_status()
 
-    async def action(self, name: str) -> dict[str, Any]:
+    async def action(self, name: str, tz: str | None = None) -> dict[str, Any]:
         """Run a sleep action, then return the resulting status (saves the
         client a second round trip)."""
         if name not in _ACTIONS:
             raise ValueError(f"unknown action {name!r}")
         async with self._lock:
+            self._apply_timezone(tz, persist=True)
             await self._fresh_session()
             fn = {
                 "start": self.api.start_sleep,
@@ -121,6 +139,30 @@ class HuckleberryService:
             return await self._build_status()
 
     # -- internals ----------------------------------------------------------
+
+    def _apply_timezone(self, tz: str | None, *, persist: bool) -> None:
+        """Reconcile the upstream client's zone with a client-reported one.
+
+        Called under self._lock (it mutates the shared api object). The rules:
+          * tz is None  -> client sent no hint (e.g. Garmin): keep current zone.
+          * tz unchanged -> already correct, nothing to do.
+          * tz changed   -> validate, apply to the live client, and (when
+                            persist) save it as the new shared source of truth.
+        An unparseable zone is ignored rather than fatal: a bogus header must
+        not knock out a working session.
+        """
+        if not tz or tz == self._current_tz:
+            return
+        try:
+            zone = ZoneInfo(tz)
+        except Exception:
+            log.warning("ignoring invalid timezone from client: %r", tz)
+            return
+        self.api._timezone = zone  # noqa: SLF001 — see module docstring
+        self._current_tz = tz
+        if persist:
+            self.store.set(_TZ_KEY, tz)
+        log.info("timezone now %s (persist=%s)", tz, persist)
 
     async def _fresh_session(self) -> None:
         await self.api.ensure_session()

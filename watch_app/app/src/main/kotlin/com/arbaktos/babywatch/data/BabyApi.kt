@@ -15,6 +15,7 @@ import okhttp3.tls.HandshakeCertificates
 import java.io.IOException
 import java.security.cert.CertificateFactory
 import java.security.cert.X509Certificate
+import java.time.ZoneId
 import java.util.concurrent.TimeUnit
 
 /** Mirror of the server's Status model (python_service/main.py). */
@@ -64,6 +65,11 @@ class BabyApi(context: Context) {
             val request = Request.Builder()
                 .url(BuildConfig.BASE_URL + path)
                 .header("Authorization", "Bearer " + BuildConfig.BEARER_TOKEN)
+                // Report this device's IANA zone (e.g. "Europe/London") so the
+                // server tracks where the baby is and shares it with other
+                // clients (Garmin can't name its zone). Cheap local lookup;
+                // sent every call so travel/DST self-correct, server-side.
+                .header("X-TZ", ZoneId.systemDefault().id)
                 .method(method, if (method == "POST") ByteArray(0).toRequestBody() else null)
                 .build()
             client.newCall(request).execute().use { response ->

@@ -4,7 +4,9 @@ Run (dev):   uvicorn main:app --port 8001
 Run (prod):  see deploy/baby-svc.service (TLS flags, workers 1)
 
 Required env: HB_EMAIL, HB_PASSWORD, API_BEARER_TOKEN
-Optional env: HB_TIMEZONE (default UTC), STATE_DB (default ./state.db)
+Optional env: HB_TIMEZONE (cold-start seed, default UTC — a capable client
+              like Wear OS reports its own zone via X-TZ and that, once seen,
+              persists and overrides the seed), STATE_DB (default ./state.db)
 """
 
 from __future__ import annotations
@@ -72,6 +74,12 @@ async def bearer_auth(request: Request, call_next):
     return await call_next(request)
 
 
+def _client_tz(request: Request) -> str | None:
+    """IANA zone a client self-reports via X-TZ (Wear OS does; Garmin can't,
+    so it omits the header and inherits the stored zone). None when absent."""
+    return request.headers.get("x-tz")
+
+
 async def _upstream(coro):
     """Translate Huckleberry/network failures into a clean 502 for clients."""
     try:
@@ -89,24 +97,24 @@ async def healthz() -> dict[str, bool]:
 
 @app.get("/status", response_model=Status)
 async def status(request: Request) -> Status:
-    return await _upstream(request.app.state.hb.status())
+    return await _upstream(request.app.state.hb.status(_client_tz(request)))
 
 
 @app.post("/sleep/start", response_model=Status)
 async def sleep_start(request: Request) -> Status:
-    return await _upstream(request.app.state.hb.action("start"))
+    return await _upstream(request.app.state.hb.action("start", _client_tz(request)))
 
 
 @app.post("/sleep/pause", response_model=Status)
 async def sleep_pause(request: Request) -> Status:
-    return await _upstream(request.app.state.hb.action("pause"))
+    return await _upstream(request.app.state.hb.action("pause", _client_tz(request)))
 
 
 @app.post("/sleep/resume", response_model=Status)
 async def sleep_resume(request: Request) -> Status:
-    return await _upstream(request.app.state.hb.action("resume"))
+    return await _upstream(request.app.state.hb.action("resume", _client_tz(request)))
 
 
 @app.post("/sleep/stop", response_model=Status)
 async def sleep_stop(request: Request) -> Status:
-    return await _upstream(request.app.state.hb.action("stop"))
+    return await _upstream(request.app.state.hb.action("stop", _client_tz(request)))
